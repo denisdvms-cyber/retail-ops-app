@@ -30,6 +30,8 @@ let state = {
   records: null,
   toast: "",
   loading: true,
+  unlocked: false,
+  unlockPin: "",
 };
 
 function currentStore() {
@@ -63,9 +65,10 @@ async function api(path, options = {}) {
 
 async function init() {
   try {
-    catalog = await api("/api/bootstrap");
+    await api("/api/bootstrap");
     if (state.token) {
       applyPayload(await api("/api/state"));
+      state.unlocked = true;
     }
   } catch {
     state.token = "";
@@ -77,6 +80,9 @@ async function init() {
 }
 
 function applyPayload(payload) {
+  if (payload.stores) catalog.stores = payload.stores;
+  if (payload.staff) catalog.staff = payload.staff;
+  if (payload.suppliers) catalog.suppliers = payload.suppliers;
   state.currentUser = payload.user || state.currentUser;
   state.currentStoreId = payload.storeId || state.currentStoreId;
   state.records = payload.records || state.records;
@@ -88,6 +94,11 @@ function render() {
     app.innerHTML = `<main class="login-wrap"><section class="login-panel"><div class="brand"><span class="brand-mark">${icons.store}</span><span>Retail Ops</span></div><p>Loading secure staff app...</p></section></main>`;
     return;
   }
+  if (!state.unlocked && (!state.currentUser || !state.records)) {
+    app.innerHTML = renderPinEntry();
+    bindPinEntry();
+    return;
+  }
   if (!state.currentUser || !state.records) {
     app.innerHTML = renderLogin();
     bindLogin();
@@ -97,6 +108,43 @@ function render() {
   bindApp();
 }
 
+function renderPinEntry() {
+  return `
+    <main class="login-wrap">
+      <section class="login-panel">
+        <div class="brand"><span class="brand-mark">${icons.store}</span><span>Retail Ops</span></div>
+        <h1>Enter staff PIN</h1>
+        <p>Staff names and store details are hidden until the correct PIN is entered.</p>
+        <form id="pinForm">
+          <div class="field">
+            <label for="pinInput">Staff PIN</label>
+            <input class="input" id="pinInput" type="password" inputmode="numeric" maxlength="6" placeholder="Enter PIN" autocomplete="off" required autofocus>
+          </div>
+          <button class="primary-btn" type="submit">${icons.home} Continue</button>
+        </form>
+        <div class="login-note">Ask the director or manager for the current staff PIN.</div>
+      </section>
+    </main>`;
+}
+
+function bindPinEntry() {
+  document.getElementById("pinForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const pin = document.getElementById("pinInput").value;
+    try {
+      applyPayload(await api("/api/unlock", {
+        method: "POST",
+        body: JSON.stringify({ pin }),
+      }));
+      state.unlocked = true;
+      state.unlockPin = pin;
+      render();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+}
+
 function renderLogin() {
   const staffOptions = catalog.staff.map((person) => `<option value="${person.id}">${person.name} - ${person.role}</option>`).join("");
   const storeOptions = catalog.stores.map((store) => `<option value="${store.id}">${store.name}</option>`).join("");
@@ -104,15 +152,14 @@ function renderLogin() {
     <main class="login-wrap">
       <section class="login-panel">
         <div class="brand"><span class="brand-mark">${icons.store}</span><span>Retail Ops</span></div>
-        <h1>Staff operations for every store shift</h1>
-        <p>Sign in with a staff PIN to complete store checks, temperature logs, visitor records, age-check logs, and Post Office duties.</p>
+        <h1>Select staff member</h1>
+        <p>PIN accepted. Choose who is working and which store they are logging for.</p>
         <form id="loginForm">
           <div class="field"><label for="staffSelect">Staff member</label><select class="select" id="staffSelect">${staffOptions}</select></div>
           <div class="field"><label for="storeSelect">Store</label><select class="select" id="storeSelect">${storeOptions}</select></div>
-          <div class="field"><label for="pinInput">Staff PIN</label><input class="input" id="pinInput" type="password" inputmode="numeric" maxlength="6" placeholder="Enter staff PIN" required></div>
           <button class="primary-btn" type="submit">${icons.home} Login</button>
         </form>
-        <div class="login-note">PINs are checked on the server now, so they are no longer stored in the page code.</div>
+        <div class="login-note">Denis is listed as Main Director in the staff records.</div>
       </section>
       <section class="login-visual" aria-hidden="true">
         <div class="preview-board">
@@ -136,7 +183,7 @@ function bindLogin() {
         body: JSON.stringify({
           staffId: document.getElementById("staffSelect").value,
           storeId: document.getElementById("storeSelect").value,
-          pin: document.getElementById("pinInput").value,
+          pin: state.unlockPin,
         }),
       });
       state.token = payload.token;

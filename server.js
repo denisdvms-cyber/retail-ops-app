@@ -54,7 +54,7 @@ const staff = [
   staffMember("u11", "Vishnu", "Supervisor", "s3", true, "V"),
   staffMember("u12", "Vijekumar", "Sales Assistant", "s3", false, "VI"),
   staffMember("u13", "Keeran", "Sales Assistant", "s3", false, "K"),
-  staffMember("u14", "Denis", "Store Manager", "s3", true, "D"),
+  staffMember("u14", "Denis", "Main Director", "s3", true, "D"),
   staffMember("u15", "Ananth", "Sales Assistant", "s3", false, "AN"),
   staffMember("u16", "Amen", "Supervisor", "s4", true, "AM"),
   staffMember("u17", "Partap", "Sales Assistant", "s4", false, "P"),
@@ -197,14 +197,35 @@ function storePayload(data, storeId) {
   };
 }
 
+function catalogPayload(data) {
+  return {
+    stores: data.stores,
+    staff: data.staff.map(publicStaff),
+    suppliers: data.suppliers,
+  };
+}
+
 async function handleApi(request, response, pathname) {
   const data = readData();
 
   if (request.method === "GET" && pathname === "/api/bootstrap") {
     sendJson(response, 200, {
-      stores: data.stores,
-      staff: data.staff.map(publicStaff),
-      suppliers: data.suppliers,
+      locked: true,
+    });
+    return;
+  }
+
+  if (request.method === "POST" && pathname === "/api/unlock") {
+    const body = await readBody(request);
+    const validPin = data.staff.some((person) => hashPin(body.pin) === person.pinHash);
+
+    if (!validPin) {
+      sendJson(response, 401, { message: "Wrong PIN" });
+      return;
+    }
+
+    sendJson(response, 200, {
+      ...catalogPayload(data),
     });
     return;
   }
@@ -224,6 +245,7 @@ async function handleApi(request, response, pathname) {
     sendJson(response, 200, {
       token,
       user: publicStaff(user),
+      ...catalogPayload(data),
       ...storePayload(data, store.id),
     });
     return;
@@ -243,6 +265,7 @@ async function handleApi(request, response, pathname) {
   if (request.method === "GET" && pathname === "/api/state") {
     sendJson(response, 200, {
       user: publicStaff(user),
+      ...catalogPayload(data),
       ...storePayload(data, userStoreId),
     });
     return;
