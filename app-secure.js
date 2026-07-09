@@ -19,6 +19,9 @@ const icons = {
   post: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 8l9 6 9-6"/></svg>',
   reports: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h9l3 3v15H6z"/><path d="M9 14h6M9 10h6"/></svg>',
   team: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M2 21v-2a4 4 0 0 1 3-3.87"/></svg>',
+  money: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 10v4M18 10v4"/></svg>',
+  delivery: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h11v10H3z"/><path d="M14 10h4l3 3v4h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg>',
+  audit: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l2 2 4-4"/><path d="M12 3l7 4v5c0 5-3 8-7 9-4-1-7-4-7-9V7z"/></svg>',
 };
 
 let catalog = { stores: [], staff: [], suppliers: [] };
@@ -30,8 +33,8 @@ let state = {
   records: null,
   toast: "",
   loading: true,
-  unlocked: false,
-  unlockPin: "",
+  temperatureDate: new Date().toISOString().slice(0, 10),
+  reportMonth: new Date().toISOString().slice(0, 7),
 };
 
 function currentStore() {
@@ -65,10 +68,9 @@ async function api(path, options = {}) {
 
 async function init() {
   try {
-    await api("/api/bootstrap");
+    applyPayload(await api("/api/bootstrap"));
     if (state.token) {
       applyPayload(await api("/api/state"));
-      state.unlocked = true;
     }
   } catch {
     state.token = "";
@@ -94,11 +96,6 @@ function render() {
     app.innerHTML = `<main class="login-wrap"><section class="login-panel"><div class="brand"><span class="brand-mark">${icons.store}</span><span>Retail Ops</span></div><p>Loading secure staff app...</p></section></main>`;
     return;
   }
-  if (!state.unlocked && (!state.currentUser || !state.records)) {
-    app.innerHTML = renderPinEntry();
-    bindPinEntry();
-    return;
-  }
   if (!state.currentUser || !state.records) {
     app.innerHTML = renderLogin();
     bindLogin();
@@ -108,65 +105,28 @@ function render() {
   bindApp();
 }
 
-function renderPinEntry() {
-  return `
-    <main class="login-wrap">
-      <section class="login-panel">
-        <div class="brand"><span class="brand-mark">${icons.store}</span><span>Retail Ops</span></div>
-        <h1>Enter staff PIN</h1>
-        <p>Staff names and store details are hidden until the correct PIN is entered.</p>
-        <form id="pinForm">
-          <div class="field">
-            <label for="pinInput">Staff PIN</label>
-            <input class="input" id="pinInput" type="password" inputmode="numeric" maxlength="6" placeholder="Enter PIN" autocomplete="off" required autofocus>
-          </div>
-          <button class="primary-btn" type="submit">${icons.home} Continue</button>
-        </form>
-        <div class="login-note">Ask the director or manager for the current staff PIN.</div>
-      </section>
-    </main>`;
-}
-
-function bindPinEntry() {
-  document.getElementById("pinForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const pin = document.getElementById("pinInput").value;
-    try {
-      applyPayload(await api("/api/unlock", {
-        method: "POST",
-        body: JSON.stringify({ pin }),
-      }));
-      state.unlocked = true;
-      state.unlockPin = pin;
-      render();
-    } catch (error) {
-      alert(error.message);
-    }
-  });
-}
-
 function renderLogin() {
-  const staffOptions = catalog.staff.map((person) => `<option value="${person.id}">${person.name} - ${person.role}</option>`).join("");
   const storeOptions = catalog.stores.map((store) => `<option value="${store.id}">${store.name}</option>`).join("");
   return `
     <main class="login-wrap">
       <section class="login-panel">
         <div class="brand"><span class="brand-mark">${icons.store}</span><span>Retail Ops</span></div>
-        <h1>Select staff member</h1>
-        <p>PIN accepted. Choose who is working and which store they are logging for.</p>
+        <h1>Staff login</h1>
+        <p>Enter your own name and password so every log shows exactly who made it.</p>
         <form id="loginForm">
-          <div class="field"><label for="staffSelect">Staff member</label><select class="select" id="staffSelect">${staffOptions}</select></div>
+          <div class="field"><label for="staffName">Staff name</label><input class="input" id="staffName" autocomplete="username" placeholder="Example: Arti" required autofocus></div>
+          <div class="field"><label for="staffPassword">Password</label><input class="input" id="staffPassword" type="password" autocomplete="current-password" placeholder="Your staff password" required></div>
           <div class="field"><label for="storeSelect">Store</label><select class="select" id="storeSelect">${storeOptions}</select></div>
           <button class="primary-btn" type="submit">${icons.home} Login</button>
         </form>
-        <div class="login-note">Denis is listed as Main Director in the staff records.</div>
+        <div class="login-note">Starter password format: staff name plus 2505, for example denis2505.</div>
       </section>
       <section class="login-visual" aria-hidden="true">
         <div class="preview-board">
           <div class="preview-row">
-            <div class="preview-card">Tasks<strong>8/12</strong><small class="muted">Completed today</small></div>
-            <div class="preview-card">Temperature<strong>2/2</strong><small class="muted">Logs complete</small></div>
-            <div class="preview-card">Age Checks<strong>5</strong><small class="muted">Today</small></div>
+            <div class="preview-card">Daily Temps<strong>24</strong><small class="muted">Units on one page</small></div>
+            <div class="preview-card">Reports<strong>PDF</strong><small class="muted">Monthly download</small></div>
+            <div class="preview-card">Logbook<strong>Audit</strong><small class="muted">Edits tracked</small></div>
           </div>
           <div class="preview-list"><div class="mini-line"></div><div class="mini-line"></div><div class="mini-line"></div></div>
         </div>
@@ -181,9 +141,9 @@ function bindLogin() {
       const payload = await api("/api/login", {
         method: "POST",
         body: JSON.stringify({
-          staffId: document.getElementById("staffSelect").value,
           storeId: document.getElementById("storeSelect").value,
-          pin: state.unlockPin,
+          staffName: document.getElementById("staffName").value,
+          password: document.getElementById("staffPassword").value,
         }),
       });
       state.token = payload.token;
@@ -201,10 +161,13 @@ function renderShell() {
   const nav = [
     ["dashboard", "Dashboard", icons.home],
     ["tasks", "Tasks", icons.tasks],
-    ["temperature", "Temperature Check", icons.temp],
+    ["temperature", "Daily Temps", icons.temp],
     ["visitors", "Visitor Log", icons.visitor],
     ["age", "Age Check Log", icons.age],
     ...(user.postOffice ? [["post", "Post Office Duties", icons.post]] : []),
+    ["payouts", "Payouts", icons.money],
+    ["deliveries", "Deliveries", icons.delivery],
+    ["audit", "Logbook", icons.audit],
     ["reports", "Logs & Reports", icons.reports],
     ["team", "Team", icons.team],
   ];
@@ -231,10 +194,13 @@ function renderShell() {
 function renderCurrentView() {
   if (state.activeView === "dashboard") return renderDashboard();
   if (state.activeView === "tasks") return renderTaskPage();
-  if (state.activeView === "temperature") return renderLogPage("Temperature Check", renderTemperatureForm(), renderTemperatureTable());
+  if (state.activeView === "temperature") return renderDailyTemperaturePage();
   if (state.activeView === "visitors") return renderLogPage("Visitor Log", renderVisitorForm(), renderVisitorTable());
   if (state.activeView === "age") return renderLogPage("Age Check Log", renderAgeForm(), renderAgeTable());
   if (state.activeView === "post") return renderLogPage("Post Office Duties", renderPostForm(), renderPostTable());
+  if (state.activeView === "payouts") return renderLogPage("Payouts", renderPayoutForm(), renderPayoutTable());
+  if (state.activeView === "deliveries") return renderLogPage("Deliveries", renderDeliveryForm(), renderDeliveryTable());
+  if (state.activeView === "audit") return renderAuditPage();
   if (state.activeView === "reports") return renderReports();
   if (state.activeView === "team") return renderTeam();
   return renderDashboard();
@@ -253,7 +219,7 @@ function renderStats() {
   const statData = [
     ["Tasks", `${completed} / ${records.tasks.length}`, "Completed", icons.tasks, "var(--green)", (completed / records.tasks.length) * 100],
     ["Overdue", overdue, "Require attention", "!", "var(--red)", overdue ? 25 : 0],
-    ["Temperature", records.temperatures.length, "Logs today", icons.temp, "var(--green)", 80],
+    ["Temperature", todaysTemperatureRows().length, "Logged today", icons.temp, "var(--green)", Math.min(100, (todaysTemperatureRows().length / temperatureLocations.length) * 100)],
     ["Visitors", records.visitors.length, "Today", icons.visitor, "var(--blue)", 60],
     ["Age Checks", approved + records.ageChecks.filter((c) => c.outcome === "Refused").length, "Today", icons.age, "var(--amber)", 72],
     ["Post Office", `${postDone} / ${records.postOfficeLogs.length}`, "Completed", icons.post, "var(--blue)", (postDone / records.postOfficeLogs.length) * 100],
@@ -271,11 +237,11 @@ function renderTaskRow(task) {
 }
 
 function renderTemperaturePanel() {
-  return `<section class="panel"><div class="panel-head"><h2>Temperature Check</h2><button class="ghost-btn" data-view="temperature">View log</button></div><div class="panel-body">${renderTemperatureForm()}</div></section>`;
+  return `<section class="panel"><div class="panel-head"><h2>Daily Temperature Log</h2><button class="ghost-btn" data-view="temperature">Open</button></div><div class="panel-body"><div class="summary-pair"><div class="summary-box ok"><strong>${todaysTemperatureRows().length}</strong>Done today</div><div class="summary-box"><strong>${temperatureLocations.length}</strong>Total units</div></div><button class="primary-btn" data-view="temperature">${icons.temp} Enter all temperatures</button></div></section>`;
 }
 
 function renderQuickLogPanel() {
-  const buttons = [["temperature", "Log Temperature", icons.temp], ["visitors", "Log Visitor", icons.visitor], ["age", "Log Age Check / Refusal", icons.age], ...(currentUser().postOffice ? [["post", "Post Office Duty", icons.post]] : [])];
+  const buttons = [["temperature", "Daily Temperatures", icons.temp], ["payouts", "Record Payout", icons.money], ["deliveries", "Record Delivery", icons.delivery], ["visitors", "Log Visitor", icons.visitor], ["age", "Log Age Check / Refusal", icons.age], ...(currentUser().postOffice ? [["post", "Post Office Duty", icons.post]] : [])];
   return `<section class="panel"><div class="panel-head"><h2>Quick Log</h2></div><div class="panel-body quick-grid">${buttons.map(([view, label, icon]) => `<button class="quick-btn" data-view="${view}">${icon}${label}</button>`).join("")}<button class="secondary-btn" data-view="reports">View All Logs</button></div></section>`;
 }
 
@@ -299,6 +265,8 @@ function renderActivityPanel() {
     ...records.visitors.map((item) => ({ icon: icons.visitor, title: "Visitor Logged", sub: item.name, time: item.time, tone: "blue" })),
     ...records.ageChecks.map((item) => ({ icon: icons.age, title: item.outcome === "Refused" ? "Age Check Refused" : "Age Check", sub: item.outcome === "Refused" ? item.notes : "Sale Approved", time: item.time, tone: item.outcome === "Refused" ? "danger" : "warn" })),
     ...records.postOfficeLogs.filter((item) => item.status === "Completed").map((item) => ({ icon: icons.post, title: "Post Office Duty", sub: item.duty, time: item.time, tone: "blue" })),
+    ...(records.payouts || []).map((item) => ({ icon: icons.money, title: "Payout", sub: `${item.amount} ${item.paidTo || ""}`, time: item.time, tone: "warn" })),
+    ...(records.deliveries || []).map((item) => ({ icon: icons.delivery, title: "Delivery", sub: item.supplier || item.reference || "Delivery", time: item.time, tone: "blue" })),
     ...records.tasks.filter((task) => task.overdue && !task.done).map((task) => ({ icon: "!", title: "Task Overdue", sub: task.title, time: task.due, tone: "warn" })),
   ].sort((a, b) => a.time.localeCompare(b.time)).slice(-10);
   return `<aside class="panel activity-panel"><div class="panel-head"><h2>Recent Activity</h2><button class="ghost-btn" data-view="reports">View all</button></div><div class="activity-list">${activities.map((item) => `<div class="activity-row"><span class="${item.tone}">${item.icon}</span><div><strong>${item.title}</strong><small>${item.sub}<br>${currentUser().name}</small></div><small>${item.time}</small></div>`).join("")}</div></aside>`;
@@ -310,6 +278,81 @@ function renderTaskPage() {
 
 function renderLogPage(title, form, table) {
   return `<h1 class="tab-title">${title}</h1><div class="log-page"><section class="panel"><div class="panel-head"><h2>New Entry</h2></div><div class="panel-body">${form}</div></section><section class="panel records"><div class="panel-head"><h2>Today</h2></div><div class="panel-body">${table}</div></section></div>`;
+}
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function todaysTemperatureRows() {
+  return (state.records?.temperatures || []).filter((row) => row.date === todayIso());
+}
+
+function rowsForTemperatureDate() {
+  const selectedDate = state.temperatureDate || todayIso();
+  return (state.records?.temperatures || []).filter((row) => row.date === selectedDate);
+}
+
+function findTemperatureEntry(unit) {
+  return rowsForTemperatureDate().find((row) => (row.unit || row.location) === unit) || {};
+}
+
+function displayDateParts(row) {
+  return {
+    date: row.date || "-",
+    month: row.month || (row.date ? row.date.slice(0, 7) : "-"),
+    time: row.time || "-",
+    staff: row.staff || "-",
+    type: row.entryType || "-",
+  };
+}
+
+function renderDailyTemperaturePage() {
+  const selectedDate = state.temperatureDate || todayIso();
+  const selectedMonth = selectedDate.slice(0, 7);
+  return `
+    <h1 class="tab-title">Daily Temperature Log</h1>
+    <section class="panel">
+      <div class="panel-head">
+        <h2>${selectedDate}</h2>
+        <div class="table-tools">
+          <label class="inline-field">Date <input class="input compact-input" id="temperatureDate" type="date" value="${selectedDate}"></label>
+          <label class="inline-field">PDF month <input class="input compact-input" id="temperatureReportMonth" type="month" value="${state.reportMonth || selectedMonth}"></label>
+          <button class="secondary-btn" id="downloadTempPdf" type="button">${icons.reports} Download PDF</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <form id="dailyTempForm">
+          <div class="daily-temp-wrap">
+            <table class="table daily-temp-table">
+              <thead><tr><th>Chiller / Freezer</th><th>Temperature</th><th>Status</th><th>Notes</th><th>Last saved</th></tr></thead>
+              <tbody>
+                ${temperatureLocations.map((unit) => {
+                  const entry = findTemperatureEntry(unit);
+                  const saved = displayDateParts(entry);
+                  return `<tr>
+                    <td><strong>${unit}</strong><input type="hidden" name="unit" value="${unit}"></td>
+                    <td><input class="input temp-input" name="temp" inputmode="decimal" value="${entry.temp ?? ""}" placeholder="-18 or 3"></td>
+                    <td><select class="select" name="status"><option ${entry.status === "In Range" ? "selected" : ""}>In Range</option><option ${entry.status === "Out of Range - Action Taken" ? "selected" : ""}>Out of Range - Action Taken</option></select></td>
+                    <td><input class="input" name="notes" value="${entry.notes || ""}" placeholder="Optional note"></td>
+                    <td><small>${saved.date}<br>${saved.month} ${saved.time}<br>${saved.staff}</small></td>
+                  </tr>`;
+                }).join("")}
+              </tbody>
+            </table>
+          </div>
+          <div class="field edit-reason">
+            <label>Reason if correcting or changing entries</label>
+            <textarea class="textarea" id="dailyEditReason" placeholder="Example: Temperature corrected after recheck"></textarea>
+          </div>
+          <div class="form-actions"><button class="primary-btn" type="submit">${icons.temp} Save daily temperatures</button></div>
+        </form>
+      </div>
+    </section>
+    <section class="panel records">
+      <div class="panel-head"><h2>Saved entries for ${selectedDate}</h2></div>
+      <div class="panel-body">${renderTemperatureTable(rowsForTemperatureDate())}</div>
+    </section>`;
 }
 
 function renderTemperatureForm() {
@@ -328,13 +371,19 @@ function renderPostForm() {
   return `<form data-form="post"><div class="field"><label>Duty</label><select class="select" name="duty"><option>Open Procedure</option><option>Mail Bag Received</option><option>Midday Check</option><option>Mail Bag Dispatch</option><option>Close Down</option><option>Cash Balancing</option></select></div><div class="field"><label>Status</label><select class="select" name="status"><option>Completed</option><option>Issue Found</option></select></div><div class="field"><label>Notes</label><textarea class="textarea" name="notes" placeholder="Optional"></textarea></div><div class="form-actions"><button class="secondary-btn" type="reset">Clear</button><button class="primary-btn" type="submit">Log Duty</button></div></form>`;
 }
 
-function renderTemperatureTable() {
-  return `<table class="table"><thead><tr><th>Time</th><th>Location</th><th>Temp</th><th>Status</th><th>Logged By</th></tr></thead><tbody>${state.records.temperatures.map((row) => `<tr><td>${row.time}</td><td>${row.location}</td><td>${row.temp} deg C</td><td class="ok">${row.status}</td><td>${row.staff}</td></tr>`).join("")}</tbody></table>`;
+function renderTemperatureTable(rows = state.records.temperatures) {
+  return `<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Unit</th><th>Temp</th><th>Status</th><th>Staff</th><th>Notes</th></tr></thead><tbody>${rows.map((row) => {
+    const saved = displayDateParts(row);
+    return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td>${row.unit || row.location}</td><td>${row.temp} deg C</td><td class="${row.status === "In Range" ? "ok" : "warn"}">${row.status}</td><td>${saved.staff}</td><td>${row.notes || ""}</td></tr>`;
+  }).join("")}</tbody></table>`;
 }
 
 function renderVisitorTable(compact = false) {
   const rows = compact ? state.records.visitors.slice(0, 4) : state.records.visitors;
-  return `<table class="table"><thead><tr><th>Time</th><th>Name / Company</th><th>Purpose</th>${compact ? "" : "<th>Logged By</th>"}</tr></thead><tbody>${rows.map((row) => `<tr><td>${row.time}</td><td>${row.name}</td><td>${row.purpose}</td>${compact ? "" : `<td>${row.staff}</td>`}</tr>`).join("")}</tbody></table>`;
+  return `<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Name / Company</th><th>Purpose</th>${compact ? "" : "<th>Staff</th>"}</tr></thead><tbody>${rows.map((row) => {
+    const saved = displayDateParts(row);
+    return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td>${row.name}</td><td>${row.purpose}</td>${compact ? "" : `<td>${saved.staff}</td>`}</tr>`;
+  }).join("")}</tbody></table>`;
 }
 
 function renderAgeSummary() {
@@ -345,15 +394,53 @@ function renderAgeSummary() {
 
 function renderAgeTable(compact = false) {
   const rows = compact ? state.records.ageChecks.slice(0, 4) : state.records.ageChecks;
-  return `${compact ? "" : renderAgeSummary()}<table class="table"><thead><tr><th>Time</th><th>Outcome</th><th>Notes</th><th>Logged By</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${row.time}</td><td class="${row.outcome === "Refused" ? "danger" : "ok"}">${row.outcome}</td><td>${row.notes}</td><td>${row.staff}</td></tr>`).join("")}</tbody></table>`;
+  return `${compact ? "" : renderAgeSummary()}<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Outcome</th><th>Notes</th><th>Staff</th></tr></thead><tbody>${rows.map((row) => {
+    const saved = displayDateParts(row);
+    return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td class="${row.outcome === "Refused" ? "danger" : "ok"}">${row.outcome}</td><td>${row.notes}</td><td>${saved.staff}</td></tr>`;
+  }).join("")}</tbody></table>`;
 }
 
 function renderPostTable() {
-  return `<table class="table"><thead><tr><th>Time</th><th>Duty</th><th>Status</th><th>Logged By</th></tr></thead><tbody>${state.records.postOfficeLogs.map((row) => `<tr><td>${row.time}</td><td>${row.duty}</td><td class="${row.status === "Completed" ? "ok" : "warn"}">${row.status}</td><td>${row.staff || "-"}</td></tr>`).join("")}</tbody></table>`;
+  return `<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Duty</th><th>Status</th><th>Staff</th></tr></thead><tbody>${state.records.postOfficeLogs.map((row) => {
+    const saved = displayDateParts(row);
+    return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td>${row.duty}</td><td class="${row.status === "Completed" ? "ok" : "warn"}">${row.status}</td><td>${saved.staff}</td></tr>`;
+  }).join("")}</tbody></table>`;
+}
+
+function renderPayoutForm() {
+  return `<form data-form="payout"><div class="field"><label>Amount</label><input class="input" name="amount" inputmode="decimal" placeholder="25.00" required></div><div class="field"><label>Paid to</label><input class="input" name="paidTo" placeholder="Name or company" required></div><div class="field"><label>Reason</label><select class="select" name="reason"><option>Supplier payout</option><option>Staff expense</option><option>Refund</option><option>Post Office payout</option><option>Other</option></select></div><div class="field"><label>Notes</label><textarea class="textarea" name="notes" placeholder="Optional"></textarea></div><div class="form-actions"><button class="secondary-btn" type="reset">Clear</button><button class="primary-btn" type="submit">${icons.money} Save payout</button></div></form>`;
+}
+
+function renderPayoutTable() {
+  const rows = state.records.payouts || [];
+  return `<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Amount</th><th>Paid to</th><th>Reason</th><th>Staff</th><th>Entry</th></tr></thead><tbody>${rows.map((row) => {
+    const saved = displayDateParts(row);
+    return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td>${row.amount}</td><td>${row.paidTo}</td><td>${row.reason}</td><td>${saved.staff}</td><td>${saved.type}</td></tr>`;
+  }).join("")}</tbody></table>`;
+}
+
+function renderDeliveryForm() {
+  return `<form data-form="delivery"><div class="field"><label>Supplier</label><select class="select" name="supplier">${catalog.suppliers.map((supplier) => `<option>${supplier}</option>`).join("")}<option>Other Supplier</option></select></div><div class="field"><label>Reference / invoice number</label><input class="input" name="reference" placeholder="Invoice or delivery note number"></div><div class="field"><label>Delivery document/photo</label><input class="input" name="documentFile" type="file" accept="image/*,.pdf"></div><div class="field"><label>Document note</label><input class="input" name="documentNote" placeholder="Example: invoice photo uploaded"></div><div class="field"><label>Notes</label><textarea class="textarea" name="notes" placeholder="Optional"></textarea></div><div class="form-actions"><button class="secondary-btn" type="reset">Clear</button><button class="primary-btn" type="submit">${icons.delivery} Save delivery</button></div></form>`;
+}
+
+function renderDeliveryTable() {
+  const rows = state.records.deliveries || [];
+  return `<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Supplier</th><th>Reference</th><th>Document</th><th>Staff</th><th>Entry</th></tr></thead><tbody>${rows.map((row) => {
+    const saved = displayDateParts(row);
+    return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td>${row.supplier}</td><td>${row.reference || ""}</td><td>${row.documentName || row.documentNote || ""}</td><td>${saved.staff}</td><td>${saved.type}</td></tr>`;
+  }).join("")}</tbody></table>`;
+}
+
+function renderAuditPage() {
+  const rows = state.records.auditTrail || [];
+  return `<h1 class="tab-title">Logbook</h1><section class="panel records"><div class="panel-head"><h2>Issues, corrections, and edits</h2></div><div class="panel-body"><table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Entry</th><th>Action</th><th>Edited by</th><th>Reason</th></tr></thead><tbody>${rows.map((row) => {
+    const saved = displayDateParts(row);
+    return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td>${row.entryType}</td><td>${row.action}</td><td>${row.staff}</td><td>${row.reason}</td></tr>`;
+  }).join("")}</tbody></table>${rows.length ? "" : `<div class="empty">No edits or issues recorded yet.</div>`}</div></section>`;
 }
 
 function renderReports() {
-  return `<h1 class="tab-title">Logs & Reports</h1><div class="grid"><section class="panel"><div class="panel-head"><h2>Temperature</h2></div><div class="panel-body">${renderTemperatureTable()}</div></section><section class="panel"><div class="panel-head"><h2>Visitors</h2></div><div class="panel-body">${renderVisitorTable()}</div></section><section class="panel"><div class="panel-head"><h2>Age Checks</h2></div><div class="panel-body">${renderAgeTable()}</div></section></div>`;
+  return `<h1 class="tab-title">Logs & Reports</h1><div class="grid reports-grid"><section class="panel"><div class="panel-head"><h2>Temperature</h2><button class="ghost-btn" data-view="temperature">PDF</button></div><div class="panel-body">${renderTemperatureTable()}</div></section><section class="panel"><div class="panel-head"><h2>Payouts</h2></div><div class="panel-body">${renderPayoutTable()}</div></section><section class="panel"><div class="panel-head"><h2>Deliveries</h2></div><div class="panel-body">${renderDeliveryTable()}</div></section><section class="panel"><div class="panel-head"><h2>Visitors</h2></div><div class="panel-body">${renderVisitorTable()}</div></section><section class="panel"><div class="panel-head"><h2>Age Checks</h2></div><div class="panel-body">${renderAgeTable()}</div></section></div>`;
 }
 
 function renderTeam() {
@@ -381,6 +468,19 @@ function bindApp() {
     showToast("Post Office duty updated");
   }));
   document.querySelectorAll("form[data-form]").forEach((form) => form.addEventListener("submit", handleForm));
+  const dailyTempForm = document.getElementById("dailyTempForm");
+  if (dailyTempForm) dailyTempForm.addEventListener("submit", handleDailyTemperature);
+  const tempDate = document.getElementById("temperatureDate");
+  if (tempDate) tempDate.addEventListener("change", () => {
+    state.temperatureDate = tempDate.value || todayIso();
+    render();
+  });
+  const reportMonth = document.getElementById("temperatureReportMonth");
+  if (reportMonth) reportMonth.addEventListener("change", () => {
+    state.reportMonth = reportMonth.value || todayIso().slice(0, 7);
+  });
+  const downloadButton = document.getElementById("downloadTempPdf");
+  if (downloadButton) downloadButton.addEventListener("click", downloadTemperaturePdf);
   document.querySelectorAll("[data-action='logout']").forEach((button) => button.addEventListener("click", async () => {
     await api("/api/logout", { method: "POST" }).catch(() => {});
     state.token = "";
@@ -396,10 +496,61 @@ async function handleForm(event) {
   event.preventDefault();
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form).entries());
+  if (form.dataset.form === "delivery") {
+    const fileInput = form.querySelector("input[type='file']");
+    data.documentName = fileInput?.files?.[0]?.name || "";
+    delete data.documentFile;
+  }
   try {
     applyPayload(await api(`/api/logs/${form.dataset.form}`, { method: "POST", body: JSON.stringify(data) }));
     form.reset();
     showToast("Log saved");
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function handleDailyTemperature(event) {
+  event.preventDefault();
+  const rows = [...event.currentTarget.querySelectorAll("tbody tr")];
+  const entries = rows.map((row) => ({
+    unit: row.querySelector("[name='unit']").value,
+    temp: row.querySelector("[name='temp']").value,
+    status: row.querySelector("[name='status']").value,
+    notes: row.querySelector("[name='notes']").value,
+  })).filter((entry) => entry.temp !== "");
+  try {
+    applyPayload(await api("/api/temperature/daily", {
+      method: "POST",
+      body: JSON.stringify({
+        date: state.temperatureDate || todayIso(),
+        editReason: document.getElementById("dailyEditReason")?.value || "",
+        entries,
+      }),
+    }));
+    showToast("Daily temperatures saved");
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function downloadTemperaturePdf() {
+  const month = document.getElementById("temperatureReportMonth")?.value || state.reportMonth || todayIso().slice(0, 7);
+  try {
+    const response = await fetch(`/api/reports/temperature-pdf?month=${encodeURIComponent(month)}`, {
+      headers: state.token ? { Authorization: `Bearer ${state.token}` } : {},
+    });
+    if (!response.ok) throw new Error("Could not download PDF");
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `temperature-log-${month}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast("Temperature PDF downloaded");
   } catch (error) {
     alert(error.message);
   }
