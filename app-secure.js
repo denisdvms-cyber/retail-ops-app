@@ -105,6 +105,78 @@ function render() {
   bindApp();
 }
 
+function draftKey(formName) {
+  return `retailOpsDraft:${state.currentStoreId || "store"}:${currentUser().id || currentUser().name || "staff"}:${formName}`;
+}
+
+function readDraft(formName) {
+  try {
+    return JSON.parse(localStorage.getItem(draftKey(formName)) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function writeDraft(form) {
+  if (!form?.dataset?.form && form?.id !== "dailyTempForm") return;
+  const formName = form.dataset.form || form.id;
+  const data = {};
+  if (form.id === "dailyTempForm") {
+    data.date = document.getElementById("temperatureDate")?.value || state.temperatureDate;
+    data.editReason = document.getElementById("dailyEditReason")?.value || "";
+    data.entries = [...form.querySelectorAll("tbody tr")].map((row) => ({
+      unit: row.querySelector("[name='unit']")?.value || "",
+      temp: row.querySelector("[name='temp']")?.value || "",
+      status: row.querySelector("[name='status']")?.value || "In Range",
+      notes: row.querySelector("[name='notes']")?.value || "",
+    }));
+  } else {
+    form.querySelectorAll("input, textarea, select").forEach((field) => {
+      if (!field.name) return;
+      if (field.type === "file") data[`${field.name}Name`] = field.files?.[0]?.name || "";
+      else data[field.name] = field.value;
+    });
+  }
+  localStorage.setItem(draftKey(formName), JSON.stringify(data));
+}
+
+function restoreDraft(form) {
+  const formName = form.dataset.form || form.id;
+  const data = readDraft(formName);
+  if (form.id === "dailyTempForm") {
+    if (data.editReason) {
+      const reason = document.getElementById("dailyEditReason");
+      if (reason) reason.value = data.editReason;
+    }
+    (data.entries || []).forEach((entry) => {
+      const row = [...form.querySelectorAll("tbody tr")].find((item) => item.querySelector("[name='unit']")?.value === entry.unit);
+      if (!row) return;
+      row.querySelector("[name='temp']").value = entry.temp || "";
+      row.querySelector("[name='status']").value = entry.status || "In Range";
+      row.querySelector("[name='notes']").value = entry.notes || "";
+    });
+    return;
+  }
+  form.querySelectorAll("input, textarea, select").forEach((field) => {
+    if (!field.name || field.type === "file") return;
+    if (Object.prototype.hasOwnProperty.call(data, field.name)) field.value = data[field.name];
+  });
+}
+
+function clearDraft(formName) {
+  localStorage.removeItem(draftKey(formName));
+}
+
+function saveVisibleDrafts() {
+  document.querySelectorAll("form[data-form], #dailyTempForm").forEach(writeDraft);
+}
+
+function bindDraftPersistence(form) {
+  restoreDraft(form);
+  form.addEventListener("input", () => writeDraft(form));
+  form.addEventListener("change", () => writeDraft(form));
+}
+
 function renderLogin() {
   const storeOptions = catalog.stores.map((store) => `<option value="${store.id}">${store.name}</option>`).join("");
   return `
@@ -449,9 +521,14 @@ function renderTeam() {
 }
 
 function bindApp() {
-  document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => { state.activeView = button.dataset.view; render(); }));
+  document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => {
+    saveVisibleDrafts();
+    state.activeView = button.dataset.view;
+    render();
+  }));
   document.querySelectorAll("[data-store]").forEach((button) => button.addEventListener("click", async () => {
     try {
+      saveVisibleDrafts();
       applyPayload(await api("/api/switch-store", { method: "POST", body: JSON.stringify({ storeId: button.dataset.store }) }));
       showToast(`Switched to ${currentStore().name}`);
     } catch (error) {
@@ -467,11 +544,18 @@ function bindApp() {
     applyPayload(await api(`/api/post-duty/${encodeURIComponent(button.dataset.postDuty)}`, { method: "POST" }));
     showToast("Post Office duty updated");
   }));
-  document.querySelectorAll("form[data-form]").forEach((form) => form.addEventListener("submit", handleForm));
+  document.querySelectorAll("form[data-form]").forEach((form) => {
+    bindDraftPersistence(form);
+    form.addEventListener("submit", handleForm);
+  });
   const dailyTempForm = document.getElementById("dailyTempForm");
-  if (dailyTempForm) dailyTempForm.addEventListener("submit", handleDailyTemperature);
+  if (dailyTempForm) {
+    bindDraftPersistence(dailyTempForm);
+    dailyTempForm.addEventListener("submit", handleDailyTemperature);
+  }
   const tempDate = document.getElementById("temperatureDate");
   if (tempDate) tempDate.addEventListener("change", () => {
+    saveVisibleDrafts();
     state.temperatureDate = tempDate.value || todayIso();
     render();
   });
@@ -489,7 +573,10 @@ function bindApp() {
     localStorage.removeItem("retailOpsToken");
     render();
   }));
-  document.querySelectorAll("[data-action='break']").forEach((button) => button.addEventListener("click", () => showToast("Break started")));
+  document.querySelectorAll("[data-action='break']").forEach((button) => button.addEventListener("click", () => {
+    saveVisibleDrafts();
+    showToast("Break started");
+  }));
 }
 
 async function handleForm(event) {
@@ -503,6 +590,7 @@ async function handleForm(event) {
   }
   try {
     applyPayload(await api(`/api/logs/${form.dataset.form}`, { method: "POST", body: JSON.stringify(data) }));
+    clearDraft(form.dataset.form);
     form.reset();
     showToast("Log saved");
   } catch (error) {
@@ -528,6 +616,7 @@ async function handleDailyTemperature(event) {
         entries,
       }),
     }));
+    clearDraft("dailyTempForm");
     showToast("Daily temperatures saved");
   } catch (error) {
     alert(error.message);
@@ -558,11 +647,17 @@ async function downloadTemperaturePdf() {
 
 function showToast(message) {
   state.toast = message;
-  render();
+  let toast = document.querySelector(".toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.className = "toast";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
   window.clearTimeout(window.toastTimer);
   window.toastTimer = window.setTimeout(() => {
     state.toast = "";
-    render();
+    toast.remove();
   }, 2200);
 }
 
