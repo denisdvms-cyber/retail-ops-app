@@ -35,6 +35,9 @@ let state = {
   loading: true,
   temperatureDate: new Date().toISOString().slice(0, 10),
   reportMonth: new Date().toISOString().slice(0, 7),
+  historyMode: "date",
+  historyDate: new Date().toISOString().slice(0, 10),
+  historyMonth: new Date().toISOString().slice(0, 7),
 };
 
 function currentStore() {
@@ -240,7 +243,7 @@ function renderShell() {
     ["payouts", "Payouts", icons.money],
     ["deliveries", "Deliveries", icons.delivery],
     ["audit", "Logbook", icons.audit],
-    ["reports", "Logs & Reports", icons.reports],
+    ["reports", "History", icons.reports],
     ["team", "Team", icons.team],
   ];
 
@@ -356,6 +359,18 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function addDaysIso(days) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function addMonthsIso(months) {
+  const date = new Date();
+  date.setMonth(date.getMonth() + months);
+  return date.toISOString().slice(0, 7);
+}
+
 function todaysTemperatureRows() {
   return (state.records?.temperatures || []).filter((row) => row.date === todayIso());
 }
@@ -377,6 +392,50 @@ function displayDateParts(row) {
     staff: row.staff || "-",
     type: row.entryType || "-",
   };
+}
+
+function rowDate(row) {
+  return row.date || "";
+}
+
+function rowMonth(row) {
+  return row.month || (row.date ? row.date.slice(0, 7) : "");
+}
+
+function historyRows(rows = []) {
+  const filtered = rows.filter((row) => {
+    if (state.historyMode === "all") return true;
+    if (state.historyMode === "month") return rowMonth(row) === state.historyMonth;
+    return rowDate(row) === state.historyDate;
+  });
+  return filtered.sort((a, b) => `${rowDate(b)} ${b.time || ""}`.localeCompare(`${rowDate(a)} ${a.time || ""}`));
+}
+
+function historyTitle() {
+  if (state.historyMode === "all") return "All saved records";
+  if (state.historyMode === "month") return `Records for ${state.historyMonth}`;
+  return `Records for ${state.historyDate}`;
+}
+
+function historyControls() {
+  return `
+    <section class="panel history-controls">
+      <div class="panel-head">
+        <h2>Previous Records</h2>
+        <div class="table-tools">
+          <button class="secondary-btn compact-btn ${state.historyMode === "date" && state.historyDate === todayIso() ? "active-filter" : ""}" data-history-date="${todayIso()}">Today</button>
+          <button class="secondary-btn compact-btn ${state.historyMode === "date" && state.historyDate === addDaysIso(-1) ? "active-filter" : ""}" data-history-date="${addDaysIso(-1)}">Yesterday</button>
+          <button class="secondary-btn compact-btn ${state.historyMode === "month" && state.historyMonth === todayIso().slice(0, 7) ? "active-filter" : ""}" data-history-month="${todayIso().slice(0, 7)}">This Month</button>
+          <button class="secondary-btn compact-btn ${state.historyMode === "month" && state.historyMonth === addMonthsIso(-1) ? "active-filter" : ""}" data-history-month="${addMonthsIso(-1)}">Last Month</button>
+          <button class="secondary-btn compact-btn ${state.historyMode === "all" ? "active-filter" : ""}" data-history-all>All</button>
+        </div>
+      </div>
+      <div class="panel-body history-filter-row">
+        <label class="inline-field">Choose date <input class="input compact-input" id="historyDate" type="date" value="${state.historyDate}"></label>
+        <label class="inline-field">Choose month <input class="input compact-input" id="historyMonth" type="month" value="${state.historyMonth}"></label>
+        <strong>${historyTitle()}</strong>
+      </div>
+    </section>`;
 }
 
 function renderDailyTemperaturePage() {
@@ -450,30 +509,32 @@ function renderTemperatureTable(rows = state.records.temperatures) {
   }).join("")}</tbody></table>`;
 }
 
-function renderVisitorTable(compact = false) {
-  const rows = compact ? state.records.visitors.slice(0, 4) : state.records.visitors;
+function renderVisitorTable(compact = false, rowsOverride = null) {
+  const sourceRows = rowsOverride || state.records.visitors;
+  const rows = compact ? sourceRows.slice(0, 4) : sourceRows;
   return `<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Name / Company</th><th>Purpose</th>${compact ? "" : "<th>Staff</th>"}</tr></thead><tbody>${rows.map((row) => {
     const saved = displayDateParts(row);
     return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td>${row.name}</td><td>${row.purpose}</td>${compact ? "" : `<td>${saved.staff}</td>`}</tr>`;
   }).join("")}</tbody></table>`;
 }
 
-function renderAgeSummary() {
-  const approved = state.records.ageChecks.filter((item) => item.outcome === "Approved").length;
-  const refused = state.records.ageChecks.filter((item) => item.outcome === "Refused").length;
+function renderAgeSummary(rows = state.records.ageChecks) {
+  const approved = rows.filter((item) => item.outcome === "Approved").length;
+  const refused = rows.filter((item) => item.outcome === "Refused").length;
   return `<div class="summary-pair"><div class="summary-box ok"><strong>${approved}</strong>Approved</div><div class="summary-box danger"><strong>${refused}</strong>Refused</div></div>`;
 }
 
-function renderAgeTable(compact = false) {
-  const rows = compact ? state.records.ageChecks.slice(0, 4) : state.records.ageChecks;
-  return `${compact ? "" : renderAgeSummary()}<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Outcome</th><th>Notes</th><th>Staff</th></tr></thead><tbody>${rows.map((row) => {
+function renderAgeTable(compact = false, rowsOverride = null) {
+  const sourceRows = rowsOverride || state.records.ageChecks;
+  const rows = compact ? sourceRows.slice(0, 4) : sourceRows;
+  return `${compact ? "" : renderAgeSummary(rows)}<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Outcome</th><th>Notes</th><th>Staff</th></tr></thead><tbody>${rows.map((row) => {
     const saved = displayDateParts(row);
     return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td class="${row.outcome === "Refused" ? "danger" : "ok"}">${row.outcome}</td><td>${row.notes}</td><td>${saved.staff}</td></tr>`;
   }).join("")}</tbody></table>`;
 }
 
-function renderPostTable() {
-  return `<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Duty</th><th>Status</th><th>Staff</th></tr></thead><tbody>${state.records.postOfficeLogs.map((row) => {
+function renderPostTable(rows = state.records.postOfficeLogs) {
+  return `<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Duty</th><th>Status</th><th>Staff</th></tr></thead><tbody>${rows.map((row) => {
     const saved = displayDateParts(row);
     return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td>${row.duty}</td><td class="${row.status === "Completed" ? "ok" : "warn"}">${row.status}</td><td>${saved.staff}</td></tr>`;
   }).join("")}</tbody></table>`;
@@ -483,8 +544,7 @@ function renderPayoutForm() {
   return `<form data-form="payout"><div class="field"><label>Amount</label><input class="input" name="amount" inputmode="decimal" placeholder="25.00" required></div><div class="field"><label>Paid to</label><input class="input" name="paidTo" placeholder="Name or company" required></div><div class="field"><label>Reason</label><select class="select" name="reason"><option>Supplier payout</option><option>Staff expense</option><option>Refund</option><option>Post Office payout</option><option>Other</option></select></div><div class="field"><label>Notes</label><textarea class="textarea" name="notes" placeholder="Optional"></textarea></div><div class="form-actions"><button class="secondary-btn" type="reset">Clear</button><button class="primary-btn" type="submit">${icons.money} Save payout</button></div></form>`;
 }
 
-function renderPayoutTable() {
-  const rows = state.records.payouts || [];
+function renderPayoutTable(rows = state.records.payouts || []) {
   return `<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Amount</th><th>Paid to</th><th>Reason</th><th>Staff</th><th>Entry</th></tr></thead><tbody>${rows.map((row) => {
     const saved = displayDateParts(row);
     return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td>${row.amount}</td><td>${row.paidTo}</td><td>${row.reason}</td><td>${saved.staff}</td><td>${saved.type}</td></tr>`;
@@ -495,24 +555,50 @@ function renderDeliveryForm() {
   return `<form data-form="delivery"><div class="field"><label>Supplier</label><select class="select" name="supplier">${catalog.suppliers.map((supplier) => `<option>${supplier}</option>`).join("")}<option>Other Supplier</option></select></div><div class="field"><label>Reference / invoice number</label><input class="input" name="reference" placeholder="Invoice or delivery note number"></div><div class="field"><label>Delivery document/photo</label><input class="input" name="documentFile" type="file" accept="image/*,.pdf"></div><div class="field"><label>Document note</label><input class="input" name="documentNote" placeholder="Example: invoice photo uploaded"></div><div class="field"><label>Notes</label><textarea class="textarea" name="notes" placeholder="Optional"></textarea></div><div class="form-actions"><button class="secondary-btn" type="reset">Clear</button><button class="primary-btn" type="submit">${icons.delivery} Save delivery</button></div></form>`;
 }
 
-function renderDeliveryTable() {
-  const rows = state.records.deliveries || [];
+function renderDeliveryTable(rows = state.records.deliveries || []) {
   return `<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Supplier</th><th>Reference</th><th>Document</th><th>Staff</th><th>Entry</th></tr></thead><tbody>${rows.map((row) => {
     const saved = displayDateParts(row);
     return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td>${row.supplier}</td><td>${row.reference || ""}</td><td>${row.documentName || row.documentNote || ""}</td><td>${saved.staff}</td><td>${saved.type}</td></tr>`;
   }).join("")}</tbody></table>`;
 }
 
-function renderAuditPage() {
-  const rows = state.records.auditTrail || [];
-  return `<h1 class="tab-title">Logbook</h1><section class="panel records"><div class="panel-head"><h2>Issues, corrections, and edits</h2></div><div class="panel-body"><table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Entry</th><th>Action</th><th>Edited by</th><th>Reason</th></tr></thead><tbody>${rows.map((row) => {
+function renderAuditTable(rows = state.records.auditTrail || []) {
+  return `<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Entry</th><th>Action</th><th>Edited by</th><th>Reason</th></tr></thead><tbody>${rows.map((row) => {
     const saved = displayDateParts(row);
     return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td>${row.entryType}</td><td>${row.action}</td><td>${row.staff}</td><td>${row.reason}</td></tr>`;
-  }).join("")}</tbody></table>${rows.length ? "" : `<div class="empty">No edits or issues recorded yet.</div>`}</div></section>`;
+  }).join("")}</tbody></table>`;
+}
+
+function renderAuditPage() {
+  const rows = state.records.auditTrail || [];
+  return `<h1 class="tab-title">Logbook</h1>${historyControls()}<section class="panel records"><div class="panel-head"><h2>Issues, corrections, and edits</h2></div><div class="panel-body">${renderAuditTable(historyRows(rows))}${rows.length ? "" : `<div class="empty">No edits or issues recorded yet.</div>`}</div></section>`;
 }
 
 function renderReports() {
-  return `<h1 class="tab-title">Logs & Reports</h1><div class="grid reports-grid"><section class="panel"><div class="panel-head"><h2>Temperature</h2><button class="ghost-btn" data-view="temperature">PDF</button></div><div class="panel-body">${renderTemperatureTable()}</div></section><section class="panel"><div class="panel-head"><h2>Payouts</h2></div><div class="panel-body">${renderPayoutTable()}</div></section><section class="panel"><div class="panel-head"><h2>Deliveries</h2></div><div class="panel-body">${renderDeliveryTable()}</div></section><section class="panel"><div class="panel-head"><h2>Visitors</h2></div><div class="panel-body">${renderVisitorTable()}</div></section><section class="panel"><div class="panel-head"><h2>Age Checks</h2></div><div class="panel-body">${renderAgeTable()}</div></section></div>`;
+  const temperatureRows = historyRows(state.records.temperatures || []);
+  const visitorRows = historyRows(state.records.visitors || []);
+  const ageRows = historyRows(state.records.ageChecks || []);
+  const postRows = historyRows(state.records.postOfficeLogs || []);
+  const payoutRows = historyRows(state.records.payouts || []);
+  const deliveryRows = historyRows(state.records.deliveries || []);
+  const auditRows = historyRows(state.records.auditTrail || []);
+  const total = temperatureRows.length + visitorRows.length + ageRows.length + postRows.length + payoutRows.length + deliveryRows.length + auditRows.length;
+  return `<h1 class="tab-title">History & Reports</h1>
+    ${historyControls()}
+    <div class="stats history-stats">
+      <article class="stat"><div class="stat-top"><span class="stat-icon" style="background:var(--green)">${icons.temp}</span><div>Temperature<br><strong>${temperatureRows.length}</strong></div></div><span>${historyTitle()}</span></article>
+      <article class="stat"><div class="stat-top"><span class="stat-icon" style="background:var(--blue)">${icons.visitor}</span><div>Visitors<br><strong>${visitorRows.length}</strong></div></div><span>${historyTitle()}</span></article>
+      <article class="stat"><div class="stat-top"><span class="stat-icon" style="background:var(--amber)">${icons.reports}</span><div>All Records<br><strong>${total}</strong></div></div><span>Inspection view</span></article>
+    </div>
+    <div class="grid reports-grid">
+      <section class="panel"><div class="panel-head"><h2>Temperature Logbook</h2><button class="ghost-btn" data-view="temperature">Daily entry</button></div><div class="panel-body">${renderTemperatureTable(temperatureRows)}</div></section>
+      <section class="panel"><div class="panel-head"><h2>Visitor Logbook</h2></div><div class="panel-body">${renderVisitorTable(false, visitorRows)}</div></section>
+      <section class="panel"><div class="panel-head"><h2>Age Check Logbook</h2></div><div class="panel-body">${renderAgeTable(false, ageRows)}</div></section>
+      <section class="panel"><div class="panel-head"><h2>Post Office Duties</h2></div><div class="panel-body">${renderPostTable(postRows)}</div></section>
+      <section class="panel"><div class="panel-head"><h2>Payouts</h2></div><div class="panel-body">${renderPayoutTable(payoutRows)}</div></section>
+      <section class="panel"><div class="panel-head"><h2>Deliveries</h2></div><div class="panel-body">${renderDeliveryTable(deliveryRows)}</div></section>
+      <section class="panel"><div class="panel-head"><h2>Edits / Audit Logbook</h2></div><div class="panel-body">${renderAuditTable(auditRows)}</div></section>
+    </div>`;
 }
 
 function renderTeam() {
@@ -565,6 +651,32 @@ function bindApp() {
   });
   const downloadButton = document.getElementById("downloadTempPdf");
   if (downloadButton) downloadButton.addEventListener("click", downloadTemperaturePdf);
+  document.querySelectorAll("[data-history-date]").forEach((button) => button.addEventListener("click", () => {
+    state.historyMode = "date";
+    state.historyDate = button.dataset.historyDate;
+    render();
+  }));
+  document.querySelectorAll("[data-history-month]").forEach((button) => button.addEventListener("click", () => {
+    state.historyMode = "month";
+    state.historyMonth = button.dataset.historyMonth;
+    render();
+  }));
+  document.querySelectorAll("[data-history-all]").forEach((button) => button.addEventListener("click", () => {
+    state.historyMode = "all";
+    render();
+  }));
+  const historyDate = document.getElementById("historyDate");
+  if (historyDate) historyDate.addEventListener("change", () => {
+    state.historyMode = "date";
+    state.historyDate = historyDate.value || todayIso();
+    render();
+  });
+  const historyMonth = document.getElementById("historyMonth");
+  if (historyMonth) historyMonth.addEventListener("change", () => {
+    state.historyMode = "month";
+    state.historyMonth = historyMonth.value || todayIso().slice(0, 7);
+    render();
+  });
   document.querySelectorAll("[data-action='logout']").forEach((button) => button.addEventListener("click", async () => {
     await api("/api/logout", { method: "POST" }).catch(() => {});
     state.token = "";
