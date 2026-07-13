@@ -38,6 +38,9 @@ let state = {
   historyMode: "date",
   historyDate: new Date().toISOString().slice(0, 10),
   historyMonth: new Date().toISOString().slice(0, 7),
+  temperatureReviewMode: "date",
+  temperatureReviewDate: new Date().toISOString().slice(0, 10),
+  temperatureReviewMonth: new Date().toISOString().slice(0, 7),
 };
 
 function currentStore() {
@@ -395,11 +398,11 @@ function displayDateParts(row) {
 }
 
 function rowDate(row) {
-  return row.date || "";
+  return row.date || String(row.timestamp || row.createdAt || "").slice(0, 10);
 }
 
 function rowMonth(row) {
-  return row.month || (row.date ? row.date.slice(0, 7) : "");
+  return row.month || (rowDate(row) ? rowDate(row).slice(0, 7) : "");
 }
 
 function historyRows(rows = []) {
@@ -436,6 +439,33 @@ function historyControls() {
         <strong>${historyTitle()}</strong>
       </div>
     </section>`;
+}
+
+function temperatureReviewRows() {
+  const rows = state.records.temperatures || [];
+  const filtered = rows.filter((row) => {
+    if (state.temperatureReviewMode === "all") return true;
+    if (state.temperatureReviewMode === "month") return rowMonth(row) === state.temperatureReviewMonth;
+    return rowDate(row) === state.temperatureReviewDate;
+  });
+  return filtered.sort((a, b) => `${rowDate(b)} ${b.time || ""}`.localeCompare(`${rowDate(a)} ${a.time || ""}`));
+}
+
+function temperatureReviewTitle() {
+  if (state.temperatureReviewMode === "all") return "All temperature checks";
+  if (state.temperatureReviewMode === "month") return `Temperature checks for ${state.temperatureReviewMonth}`;
+  return `Temperature checks for ${state.temperatureReviewDate}`;
+}
+
+function temperatureReviewControls() {
+  return `
+    <div class="table-tools">
+      <button class="secondary-btn compact-btn ${state.temperatureReviewMode === "date" && state.temperatureReviewDate === todayIso() ? "active-filter" : ""}" data-temp-review-date="${todayIso()}">Today</button>
+      <button class="secondary-btn compact-btn ${state.temperatureReviewMode === "date" && state.temperatureReviewDate === addDaysIso(-1) ? "active-filter" : ""}" data-temp-review-date="${addDaysIso(-1)}">Yesterday</button>
+      <button class="secondary-btn compact-btn ${state.temperatureReviewMode === "month" && state.temperatureReviewMonth === todayIso().slice(0, 7) ? "active-filter" : ""}" data-temp-review-month="${todayIso().slice(0, 7)}">This Month</button>
+      <button class="secondary-btn compact-btn ${state.temperatureReviewMode === "month" && state.temperatureReviewMonth === addMonthsIso(-1) ? "active-filter" : ""}" data-temp-review-month="${addMonthsIso(-1)}">Last Month</button>
+      <button class="secondary-btn compact-btn ${state.temperatureReviewMode === "all" ? "active-filter" : ""}" data-temp-review-all>All</button>
+    </div>`;
 }
 
 function renderDailyTemperaturePage() {
@@ -483,6 +513,18 @@ function renderDailyTemperaturePage() {
     <section class="panel records">
       <div class="panel-head"><h2>Saved entries for ${selectedDate}</h2></div>
       <div class="panel-body">${renderTemperatureTable(rowsForTemperatureDate())}</div>
+    </section>
+    <section class="panel records">
+      <div class="panel-head">
+        <h2>Previous Temperature Checks</h2>
+        ${temperatureReviewControls()}
+      </div>
+      <div class="panel-body history-filter-row">
+        <label class="inline-field">Choose date <input class="input compact-input" id="temperatureReviewDate" type="date" value="${state.temperatureReviewDate}"></label>
+        <label class="inline-field">Choose month <input class="input compact-input" id="temperatureReviewMonth" type="month" value="${state.temperatureReviewMonth}"></label>
+        <strong>${temperatureReviewTitle()}</strong>
+      </div>
+      <div class="panel-body">${renderTemperatureTable(temperatureReviewRows())}</div>
     </section>`;
 }
 
@@ -651,6 +693,32 @@ function bindApp() {
   });
   const downloadButton = document.getElementById("downloadTempPdf");
   if (downloadButton) downloadButton.addEventListener("click", downloadTemperaturePdf);
+  document.querySelectorAll("[data-temp-review-date]").forEach((button) => button.addEventListener("click", () => {
+    state.temperatureReviewMode = "date";
+    state.temperatureReviewDate = button.dataset.tempReviewDate;
+    render();
+  }));
+  document.querySelectorAll("[data-temp-review-month]").forEach((button) => button.addEventListener("click", () => {
+    state.temperatureReviewMode = "month";
+    state.temperatureReviewMonth = button.dataset.tempReviewMonth;
+    render();
+  }));
+  document.querySelectorAll("[data-temp-review-all]").forEach((button) => button.addEventListener("click", () => {
+    state.temperatureReviewMode = "all";
+    render();
+  }));
+  const temperatureReviewDate = document.getElementById("temperatureReviewDate");
+  if (temperatureReviewDate) temperatureReviewDate.addEventListener("change", () => {
+    state.temperatureReviewMode = "date";
+    state.temperatureReviewDate = temperatureReviewDate.value || todayIso();
+    render();
+  });
+  const temperatureReviewMonth = document.getElementById("temperatureReviewMonth");
+  if (temperatureReviewMonth) temperatureReviewMonth.addEventListener("change", () => {
+    state.temperatureReviewMode = "month";
+    state.temperatureReviewMonth = temperatureReviewMonth.value || todayIso().slice(0, 7);
+    render();
+  });
   document.querySelectorAll("[data-history-date]").forEach((button) => button.addEventListener("click", () => {
     state.historyMode = "date";
     state.historyDate = button.dataset.historyDate;
