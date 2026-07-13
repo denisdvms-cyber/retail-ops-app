@@ -5,7 +5,7 @@ const crypto = require("crypto");
 
 const root = __dirname;
 const port = Number(process.env.PORT || 5173);
-const dataPath = path.join(root, "data.json");
+const dataPath = process.env.DATA_PATH || path.join(process.env.DATA_DIR || root, "data.json");
 const sessions = new Map();
 
 const mimeTypes = {
@@ -1043,6 +1043,7 @@ function ensureDataShape(data) {
 }
 
 function writeData(data) {
+  fs.mkdirSync(path.dirname(dataPath), { recursive: true });
   fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
 }
 

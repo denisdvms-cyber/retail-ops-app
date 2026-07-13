@@ -35,10 +35,10 @@ let state = {
   loading: true,
   temperatureDate: new Date().toISOString().slice(0, 10),
   reportMonth: new Date().toISOString().slice(0, 7),
-  historyMode: "date",
+  historyMode: "all",
   historyDate: new Date().toISOString().slice(0, 10),
   historyMonth: new Date().toISOString().slice(0, 7),
-  temperatureReviewMode: "date",
+  temperatureReviewMode: "all",
   temperatureReviewDate: new Date().toISOString().slice(0, 10),
   temperatureReviewMonth: new Date().toISOString().slice(0, 7),
 };
@@ -49,6 +49,60 @@ function currentStore() {
 
 function currentUser() {
   return state.currentUser || catalog.staff[0] || { name: "", role: "", initials: "", postOffice: false };
+}
+
+const logCollections = ["temperatures", "visitors", "ageChecks", "postOfficeLogs", "payouts", "deliveries", "auditTrail"];
+
+function recordsBackupKey(storeId = state.currentStoreId) {
+  return `retailOpsRecordsBackup:${storeId || "store"}`;
+}
+
+function rowKey(row, collection) {
+  if (row.id) return `${collection}:id:${row.id}`;
+  return [
+    collection,
+    row.entryType || "",
+    row.date || "",
+    row.month || "",
+    row.time || "",
+    row.unit || row.location || "",
+    row.name || row.supplier || row.duty || row.paidTo || "",
+    row.outcome || row.status || "",
+    row.temp || row.amount || "",
+    row.staff || "",
+  ].join("|");
+}
+
+function readRecordsBackup(storeId = state.currentStoreId) {
+  try {
+    return JSON.parse(localStorage.getItem(recordsBackupKey(storeId)) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function writeRecordsBackup(records, storeId = state.currentStoreId) {
+  if (!records || !storeId) return;
+  const existing = readRecordsBackup(storeId);
+  const backup = { ...existing };
+  logCollections.forEach((collection) => {
+    const merged = new Map();
+    [...(existing[collection] || []), ...(records[collection] || [])].forEach((row) => merged.set(rowKey(row, collection), row));
+    backup[collection] = [...merged.values()];
+  });
+  localStorage.setItem(recordsBackupKey(storeId), JSON.stringify(backup));
+}
+
+function mergeRecordsBackup(records, storeId = state.currentStoreId) {
+  if (!records || !storeId) return records;
+  const backup = readRecordsBackup(storeId);
+  const mergedRecords = { ...records };
+  logCollections.forEach((collection) => {
+    const merged = new Map();
+    [...(records[collection] || []), ...(backup[collection] || [])].forEach((row) => merged.set(rowKey(row, collection), row));
+    mergedRecords[collection] = [...merged.values()];
+  });
+  return mergedRecords;
 }
 
 async function api(path, options = {}) {
@@ -93,7 +147,10 @@ function applyPayload(payload) {
   if (payload.suppliers) catalog.suppliers = payload.suppliers;
   state.currentUser = payload.user || state.currentUser;
   state.currentStoreId = payload.storeId || state.currentStoreId;
-  state.records = payload.records || state.records;
+  if (payload.records) {
+    state.records = mergeRecordsBackup(payload.records, state.currentStoreId);
+    writeRecordsBackup(state.records, state.currentStoreId);
+  }
 }
 
 function render() {
@@ -545,6 +602,7 @@ function renderPostForm() {
 }
 
 function renderTemperatureTable(rows = state.records.temperatures) {
+  if (!rows.length) return `<div class="empty">No temperature checks found for this date or month.</div>`;
   return `<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Unit</th><th>Temp</th><th>Status</th><th>Staff</th><th>Notes</th></tr></thead><tbody>${rows.map((row) => {
     const saved = displayDateParts(row);
     return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td>${row.unit || row.location}</td><td>${row.temp} deg C</td><td class="${row.status === "In Range" ? "ok" : "warn"}">${row.status}</td><td>${saved.staff}</td><td>${row.notes || ""}</td></tr>`;
@@ -569,9 +627,9 @@ function renderAgeSummary(rows = state.records.ageChecks) {
 function renderAgeTable(compact = false, rowsOverride = null) {
   const sourceRows = rowsOverride || state.records.ageChecks;
   const rows = compact ? sourceRows.slice(0, 4) : sourceRows;
-  return `${compact ? "" : renderAgeSummary(rows)}<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Outcome</th><th>Notes</th><th>Staff</th></tr></thead><tbody>${rows.map((row) => {
+  return `${compact ? "" : renderAgeSummary(rows)}<table class="table"><thead><tr><th>Date</th><th>Month</th><th>Time</th><th>Outcome</th><th>Category</th><th>Notes</th><th>Staff</th>${compact ? "" : "<th>Edit</th>"}</tr></thead><tbody>${rows.map((row) => {
     const saved = displayDateParts(row);
-    return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td class="${row.outcome === "Refused" ? "danger" : "ok"}">${row.outcome}</td><td>${row.notes}</td><td>${saved.staff}</td></tr>`;
+    return `<tr><td>${saved.date}</td><td>${saved.month}</td><td>${saved.time}</td><td class="${row.outcome === "Refused" ? "danger" : "ok"}">${row.outcome}</td><td>${row.category || ""}</td><td>${row.notes}</td><td>${saved.staff}</td>${compact ? "" : `<td>${row.id ? `<button class="secondary-btn compact-btn" type="button" data-edit-age="${row.id}">Edit</button>` : ""}</td>`}</tr>`;
   }).join("")}</tbody></table>`;
 }
 
@@ -672,6 +730,7 @@ function bindApp() {
     applyPayload(await api(`/api/post-duty/${encodeURIComponent(button.dataset.postDuty)}`, { method: "POST" }));
     showToast("Post Office duty updated");
   }));
+  document.querySelectorAll("[data-edit-age]").forEach((button) => button.addEventListener("click", () => handleAgeEdit(button.dataset.editAge)));
   document.querySelectorAll("form[data-form]").forEach((form) => {
     bindDraftPersistence(form);
     form.addEventListener("submit", handleForm);
@@ -773,6 +832,46 @@ async function handleForm(event) {
     clearDraft(form.dataset.form);
     form.reset();
     showToast("Log saved");
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function handleAgeEdit(entryId) {
+  const entry = (state.records.ageChecks || []).find((row) => row.id === entryId);
+  if (!entry) {
+    alert("Age check entry not found");
+    return;
+  }
+  const outcome = prompt("Outcome: Approved or Refused", entry.outcome || "Approved");
+  if (outcome === null) return;
+  const cleanOutcome = String(outcome).trim();
+  if (!["Approved", "Refused"].includes(cleanOutcome)) {
+    alert("Outcome must be Approved or Refused");
+    return;
+  }
+  const category = prompt("Product category", entry.category || "");
+  if (category === null) return;
+  const notes = prompt("Notes", entry.notes || "");
+  if (notes === null) return;
+  const reason = prompt("Reason for edit (required)", "Corrected age check entry");
+  if (!String(reason || "").trim()) {
+    alert("Please enter a reason for the edit");
+    return;
+  }
+  try {
+    applyPayload(await api(`/api/logs/edit/${encodeURIComponent(entryId)}`, {
+      method: "POST",
+      body: JSON.stringify({
+        editReason: reason,
+        patch: {
+          outcome: cleanOutcome,
+          category: String(category).trim(),
+          notes: String(notes).trim(),
+        },
+      }),
+    }));
+    showToast("Age check edited");
   } catch (error) {
     alert(error.message);
   }
